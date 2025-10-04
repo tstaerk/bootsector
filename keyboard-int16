@@ -1,0 +1,95 @@
+; boot.asm — 512-byte boot sector: read keyboard input using int 16h
+; print BIOS scancode (AH) for each key
+; Build: nasm -f bin boot.asm -o boot.bin
+; Run : qemu-system-i386 -drive format=raw,file=boot.bin
+
+[bits 16]
+org 0x7C00
+
+start:
+    cli
+    xor ax, ax
+    mov ss, ax
+    mov sp, 0x7C00
+    sti
+
+    push cs
+    pop  ds
+    push ds           ; set ES=DS (can't mov between segment regs)
+    pop  es
+
+    mov si, msg
+    call print_str
+
+.loop:
+    xor ah, ah        ; INT 16h AH=0: wait for key
+    int 0x16          ; AH = BIOS scancode
+    mov si, lab
+    call print_str
+    mov al, ah
+    call print_hex_byte
+
+    mov al, 13        ; CR
+    call putc
+    mov al, 10        ; LF
+    call putc
+    jmp .loop
+
+; --- print zero-terminated string at DS:SI
+print_str:
+    push ax
+    push si
+.ps_loop:
+    lodsb
+    test al, al
+    jz .done
+    call putc
+    jmp .ps_loop
+.done:
+    pop si
+    pop ax
+    ret
+
+; --- teletype putc in AL
+putc:
+    push ax
+    push bx
+    mov ah, 0x0E
+    mov bh, 0x00
+    mov bl, 0x07
+    int 0x10
+    pop bx
+    pop ax
+    ret
+
+; --- print AL as two hex digits
+print_hex_byte:
+    push ax
+    push bx
+    mov bl, al
+    mov al, bl
+    shr al, 4
+    call hex_nib
+    mov al, bl
+    and al, 0x0F
+    call hex_nib
+    pop bx
+    pop ax
+    ret
+
+hex_nib:
+    cmp al, 10
+    jb  .digit
+    add al, 'A' - 10
+    jmp .out
+.digit:
+    add al, '0'
+.out:
+    call putc
+    ret
+
+msg db "Type a key; I'll show its BIOS scancode (AH) in hex.",13,10,0
+lab db "Scan: 0x",0
+
+times 510-($-$$) db 0
+dw 0xAA55
